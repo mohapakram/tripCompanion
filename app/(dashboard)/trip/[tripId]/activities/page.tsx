@@ -49,8 +49,11 @@ export default function ActivitiesPage({ params }: { params: Promise<{ tripId: s
   const days = Object.keys(activitiesByDay || {}).map(Number).sort((a, b) => a - b)
   const [selectedDay, setSelectedDay] = useState<number>(days[0] || 1)
 
-  const getDayLabel = (day: number) => {
-    if (!trip) return `Day ${day}`
+  // Always return a consistent object shape for day labels to satisfy TS
+  const getDayLabel = (day: number): { dayName: string; dateStr: string } => {
+    if (!trip) {
+      return { dayName: `Day ${day}`, dateStr: '' }
+    }
     const date = getDayDate(trip.start_date, day)
     const dayName = date.toLocaleDateString('en-US', { weekday: 'long' })
     const dateStr = date.toLocaleDateString('en-US', { day: 'numeric', month: 'numeric' })

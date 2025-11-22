@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useAuth } from '@/components/auth/AuthProvider'
+import { useHasMounted } from '@/hooks/use-has-mounted'
 import { LogOut, ArrowLeft, List } from 'lucide-react'
 
 interface HeaderProps {
@@ -15,7 +16,8 @@ interface HeaderProps {
 }
 
 export function Header({ tripName, showBack, onBack }: HeaderProps) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+  const hasMounted = useHasMounted()
   const router = useRouter()
   const supabase = createClient()
 
@@ -25,11 +27,12 @@ export function Header({ tripName, showBack, onBack }: HeaderProps) {
     router.refresh()
   }
 
-  const initials = user?.user_metadata?.full_name
+  // Ensure consistent fallback during hydration
+  const initials = !hasMounted || loading ? '?' : (user?.user_metadata?.full_name
     ?.split(' ')
     .map((n: string) => n[0])
     .join('')
-    .toUpperCase() || user?.email?.[0].toUpperCase() || '?'
+    .toUpperCase() || user?.email?.[0].toUpperCase() || '?')
 
   return (
     <header className="h-14 lg:h-16 border-b border-border bg-background sticky top-0 z-40">
@@ -55,12 +58,12 @@ export function Header({ tripName, showBack, onBack }: HeaderProps) {
         </div>
         <div className="flex items-center gap-2 lg:gap-4">
           <Avatar className="h-8 w-8 lg:h-10 lg:w-10">
-            <AvatarImage src={user?.user_metadata?.avatar_url} />
+            <AvatarImage src={hasMounted && !loading ? user?.user_metadata?.avatar_url : undefined} />
             <AvatarFallback className="text-xs lg:text-sm">{initials}</AvatarFallback>
           </Avatar>
           <div className="hidden lg:block">
             <p className="text-sm font-medium">
-              {user?.user_metadata?.full_name || user?.email}
+              {hasMounted && !loading && (user?.user_metadata?.full_name || user?.email)}
             </p>
           </div>
           <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-8 w-8 lg:h-10 lg:w-10">
