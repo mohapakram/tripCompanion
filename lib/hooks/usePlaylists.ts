@@ -94,17 +94,54 @@ export function usePlaylistSongs(playlistId: string) {
   const { data: songs, isLoading } = useQuery({
     queryKey: ['playlist-songs', playlistId],
     queryFn: async () => {
+      console.log('Fetching songs for playlist:', playlistId)
+      
       const { data, error } = await supabase
         .from('playlist_songs')
-        .select(`
-          *,
-          user:profiles(*)
-        `)
+        .select('*')
         .eq('playlist_id', playlistId)
         .order('created_at', { ascending: true })
 
-      if (error) throw error
-      return data as PlaylistSong[]
+      if (error) {
+        console.error('Error fetching playlist songs:', error)
+        throw error
+      }
+
+      console.log('Raw playlist songs data:', data)
+
+      if (!data || data.length === 0) {
+        console.log('No songs found for playlist:', playlistId)
+        return []
+      }
+
+      // Get profiles for all users who added songs
+      const userIds = [...new Set(data.map(song => song.added_by))]
+      console.log('Fetching profiles for user IDs:', userIds)
+
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .in('id', userIds)
+
+      if (profileError) {
+        console.error('Error fetching profiles:', profileError)
+        // Return songs without user data if profiles fail
+        return data.map(song => ({
+          ...song,
+          user: null
+        })) as PlaylistSong[]
+      }
+
+      console.log('Profiles data:', profiles)
+
+      // Combine songs with user profiles
+      const songsWithUsers = data.map(song => ({
+        ...song,
+        user: profiles?.find(profile => profile.id === song.added_by) || null
+      }))
+
+      console.log('Final songs with user data:', songsWithUsers)
+      return songsWithUsers as PlaylistSong[]
     },
     enabled: !!playlistId,
   })
@@ -114,6 +151,8 @@ export function usePlaylistSongs(playlistId: string) {
     mutationFn: async (newSong: { title: string; artist: string; url: string }) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
+
+      console.log('Adding song:', { ...newSong, playlist_id: playlistId, added_by: user.id })
 
       const { data, error } = await supabase
         .from('playlist_songs')
@@ -125,15 +164,24 @@ export function usePlaylistSongs(playlistId: string) {
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('Error adding song:', error)
+        throw error
+      }
+      console.log('Song added successfully:', data)
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['playlist-songs', playlistId] })
       toast({ title: 'Song added to playlist!' })
     },
-    onError: () => {
-      toast({ title: 'Error', description: 'Failed to add song', variant: 'destructive' })
+    onError: (error: any) => {
+      console.error('Failed to add song:', error)
+      toast({ 
+        title: 'Error', 
+        description: error?.message || 'Failed to add song', 
+        variant: 'destructive' 
+      })
     },
   })
 

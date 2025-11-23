@@ -5,12 +5,13 @@ import { useMedia } from '@/lib/hooks/useMedia'
 import { MediaGrid } from '@/components/media/MediaGrid'
 import { MediaUpload } from '@/components/media/MediaUpload'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useAuth } from '@/components/auth/AuthProvider'
 
 export default function MediaPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = use(params)
   const { user } = useAuth()
-  const { media, isLoading, uploadMedia, deleteMedia } = useMedia(tripId)
+  const { media, isLoading, error, uploadMedia, deleteMedia } = useMedia(tripId)
 
   const mediaByDay = media?.reduce((acc, item) => {
     const day = item.day || 0
@@ -26,7 +27,45 @@ export default function MediaPage({ params }: { params: Promise<{ tripId: string
     .sort((a, b) => b - a)
 
   if (isLoading) {
-    return <div className="p-6">Loading media...</div>
+    return (
+      <div className="p-4 lg:p-6">
+        <div className="flex items-center justify-between gap-2 mb-6">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold">Media Vault</h1>
+            <p className="text-sm lg:text-base text-muted-foreground">Your trip photos and videos</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+          <LoadingSpinner size="lg" />
+          <p className="text-muted-foreground animate-pulse">Loading your media...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 lg:p-6">
+        <div className="flex items-center justify-between gap-2 mb-6">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold">Media Vault</h1>
+            <p className="text-sm lg:text-base text-muted-foreground">Your trip photos and videos</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 space-y-4 text-center">
+          <div className="text-destructive text-lg">⚠️ Error Loading Media</div>
+          <p className="text-muted-foreground max-w-md">
+            {error.message || 'Failed to load media. Please check your connection and try again.'}
+          </p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -37,7 +76,9 @@ export default function MediaPage({ params }: { params: Promise<{ tripId: string
           <p className="text-sm lg:text-base text-muted-foreground">Your trip photos and videos</p>
         </div>
         <MediaUpload
-          onUpload={(file, day) => uploadMedia.mutate({ file, day })}
+          onUpload={async (files) => {
+            uploadMedia.mutate(files)
+          }}
           isUploading={uploadMedia.isPending}
         />
       </div>

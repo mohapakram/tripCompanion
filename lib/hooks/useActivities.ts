@@ -12,7 +12,7 @@ export function useActivities(tripId: string, day?: number) {
   const { toast } = useToast()
 
   // Fetch activities
-  const { data: activities, isLoading } = useQuery({
+  const { data: activities, isLoading, error } = useQuery({
     queryKey: ['activities', tripId, day],
     queryFn: async () => {
       let query = supabase
@@ -30,23 +30,33 @@ export function useActivities(tripId: string, day?: number) {
 
       const { data, error } = await query
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       // Check if user has voted and get all voters
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError) {
+        throw authError
+      }
 
       const enrichedActivities = await Promise.all(
         (data || []).map(async (activity) => {
           // Check if current user voted
-          const { data: userVote } = await supabase
+          const { data: userVote, error: voteError } = await supabase
             .from('activity_votes')
             .select('id')
             .eq('activity_id', activity.id)
             .eq('user_id', user?.id || '')
             .single()
 
+          if (voteError && voteError.code !== 'PGRST116') {
+            console.error('Error checking user vote:', voteError)
+          }
+
           // Get all voters with their profiles
-          const { data: voters } = await supabase
+          const { data: voters, error: votersError } = await supabase
             .from('activity_votes')
             .select(`
               id,
@@ -55,12 +65,18 @@ export function useActivities(tripId: string, day?: number) {
             `)
             .eq('activity_id', activity.id)
 
-          return {
+          if (votersError) {
+            console.error('Error fetching voters:', votersError)
+          }
+
+          const result = {
             ...activity,
             votes_count: activity.activity_votes[0]?.count || 0,
             user_voted: !!userVote,
             voters: voters || [],
           }
+
+          return result
         })
       )
 
@@ -142,7 +158,9 @@ export function useActivities(tripId: string, day?: number) {
           .eq('activity_id', activityId)
           .eq('user_id', user.id)
 
-        if (error) throw error
+        if (error) {
+          throw error
+        }
       } else {
         const { error } = await supabase
           .from('activity_votes')
@@ -151,11 +169,21 @@ export function useActivities(tripId: string, day?: number) {
             user_id: user.id,
           })
 
-        if (error) throw error
+        if (error) {
+          throw error
+        }
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activities', tripId] })
+    },
+    onError: (error) => {
+      console.error('Vote mutation failed:', error)
+      toast({ 
+        title: 'Error', 
+        description: `Failed to update vote: ${error.message}`, 
+        variant: 'destructive' 
+      })
     },
   })
 
@@ -178,6 +206,7 @@ export function useActivities(tripId: string, day?: number) {
   return {
     activities,
     isLoading,
+    error,
     createActivity,
     toggleVote,
     deleteActivity,

@@ -2,27 +2,34 @@
 
 import { use, useState, useEffect } from 'react'
 import { useActivities } from '@/lib/hooks/useActivities'
+import { useChallenges } from '@/lib/hooks/useChallenges'
+import { useMedia } from '@/lib/hooks/useMedia'
 import { useTripMember } from '@/lib/hooks/useTripMember'
-import { useDayAttendance } from '@/lib/hooks/useDayAttendance'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { ActivityCard } from '@/components/activities/ActivityCard'
 import { ActivityForm } from '@/components/activities/ActivityForm'
+import { ChallengeCard } from '@/components/games/ChallengeCard'
+import { MediaUpload } from '@/components/media/MediaUpload'
+import { MediaGrid } from '@/components/media/MediaGrid'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { createClient } from '@/lib/supabase/client'
 import { getDayDate, getTripDays } from '@/lib/utils'
-import { UserPlus, UserMinus } from 'lucide-react'
+import { Plus, Calendar, Camera, Target } from 'lucide-react'
 import Link from 'next/link'
 
 export default function ActivitiesPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = use(params)
   const { user } = useAuth()
-  const { activities, isLoading, createActivity, toggleVote, deleteActivity } = useActivities(tripId)
+  const { activities, isLoading: activitiesLoading, createActivity, deleteActivity } = useActivities(tripId)
+  const { challenges, isLoading: challengesLoading } = useChallenges(tripId)
+  const { media, isLoading: mediaLoading, uploadMedia, deleteMedia } = useMedia(tripId)
   const { isAdmin, userId } = useTripMember(tripId)
-  const { attendance, joinDay, leaveDay } = useDayAttendance(tripId)
   const [trip, setTrip] = useState<any>(null)
+  const [showActivityForm, setShowActivityForm] = useState<number | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -37,7 +44,7 @@ export default function ActivitiesPage({ params }: { params: Promise<{ tripId: s
   const totalDays = trip ? getTripDays(trip.start_date, trip.end_date) : 0
   const allDays = Array.from({ length: totalDays }, (_, i) => i + 1)
 
-  // Group activities by day
+  // Group data by day
   const activitiesByDay = activities?.reduce((acc, activity) => {
     if (!acc[activity.day]) {
       acc[activity.day] = []
@@ -45,6 +52,27 @@ export default function ActivitiesPage({ params }: { params: Promise<{ tripId: s
     acc[activity.day].push(activity)
     return acc
   }, {} as Record<number, typeof activities>)
+
+  const challengesByDay = challenges?.reduce((acc, challenge) => {
+    // For now, challenges don't have a day field, so we'll show them on all days
+    // TODO: Add day field to challenges table
+    allDays.forEach(day => {
+      if (!acc[day]) {
+        acc[day] = []
+      }
+      acc[day].push(challenge)
+    })
+    return acc
+  }, {} as Record<number, typeof challenges>)
+
+  const mediaByDay = media?.reduce((acc, item) => {
+    const day = item.day || 0
+    if (!acc[day]) {
+      acc[day] = []
+    }
+    acc[day].push(item)
+    return acc
+  }, {} as Record<number, typeof media>)
 
   const days = Object.keys(activitiesByDay || {}).map(Number).sort((a, b) => a - b)
   const [selectedDay, setSelectedDay] = useState<number>(days[0] || 1)
@@ -59,6 +87,8 @@ export default function ActivitiesPage({ params }: { params: Promise<{ tripId: s
     const dateStr = date.toLocaleDateString('en-US', { day: 'numeric', month: 'numeric' })
     return { dayName, dateStr }
   }
+
+  const isLoading = activitiesLoading || challengesLoading || mediaLoading
 
   if (isLoading || !trip) {
     return (
@@ -75,174 +105,171 @@ export default function ActivitiesPage({ params }: { params: Promise<{ tripId: s
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold">Activities</h1>
-          <p className="text-sm lg:text-base text-muted-foreground">Plan and vote on trip activities</p>
+          <h1 className="text-2xl lg:text-3xl font-bold">Trip Days</h1>
+          <p className="text-sm lg:text-base text-muted-foreground">Activities, challenges, and media organized by day</p>
         </div>
       </div>
 
-      {days.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>No activities yet</CardTitle>
-            <CardDescription>
-              {isAdmin ? 'Start by adding your first activity' : 'No activities planned yet. Only trip admins can add activities.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isAdmin && (
-              <ActivityForm
-                day={1}
-                onSubmit={(data) => createActivity.mutate(data)}
-                isSubmitting={createActivity.isPending}
-              />
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Tabs value={selectedDay.toString()} onValueChange={(v) => setSelectedDay(Number(v))}>
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 lg:gap-0 mb-4">
-            <div className="overflow-x-auto -mx-4 px-4 lg:mx-0 lg:px-0">
-              <TabsList className="w-max lg:w-auto">
-                {days.map((day) => {
-                  const { dayName, dateStr } = getDayLabel(day)
-                  return (
-                    <TabsTrigger
-                      key={day}
-                      value={day.toString()}
-                      className="text-xs lg:text-sm flex flex-col items-start px-3 lg:px-4"
-                    >
-                      <span className="font-semibold">Day {day}</span>
-                      <span className="text-[10px] lg:text-xs text-muted-foreground font-normal">
-                        {dayName} - {dateStr}
-                      </span>
-                    </TabsTrigger>
-                  )
-                })}
-              </TabsList>
-            </div>
-            {isAdmin && (
-              <ActivityForm
-                day={selectedDay}
-                onSubmit={(data) => createActivity.mutate(data)}
-                isSubmitting={createActivity.isPending}
-              />
-            )}
-          </div>
+      {/* Days Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+        {allDays.map((day) => {
+          const { dayName, dateStr } = getDayLabel(day)
+          const dayActivities = activitiesByDay?.[day] || []
+          const dayChallenges = challengesByDay?.[day] || []
+          const dayMedia = mediaByDay?.[day] || []
 
-          {days.map((day) => (
-            <TabsContent key={day} value={day.toString()} className="space-y-4">
-              {activitiesByDay?.[day]?.map((activity) => (
-                <ActivityCard
-                  key={activity.id}
-                  activity={activity}
-                  onVote={(id, voted) => toggleVote.mutate({ activityId: id, userVoted: voted })}
-                  onDelete={(id) => deleteActivity.mutate(id)}
-                  canDelete={isAdmin || activity.created_by === userId}
-                />
-              ))}
-            </TabsContent>
-          ))}
-        </Tabs>
-      )}
-
-      {/* Vertical Timeline */}
-      <div className="relative max-w-4xl mx-auto mt-6">
-        {/* Timeline line */}
-        <div className="absolute left-8 lg:left-12 top-0 bottom-0 w-0.5 bg-border" />
-
-        {/* Timeline items */}
-        <div className="space-y-6">
-          {allDays.map((day) => {
-            const { dayName, dateStr } = getDayLabel(day)
-            const dayAttendees = attendance?.filter(a => a.day === day) || []
-            const isUserAttending = dayAttendees.some(a => a.user_id === user?.id)
-
-            return (
-              <div key={day} className="relative flex items-start gap-4 lg:gap-6 group">
-                {/* Timeline dot */}
-                <div className="relative z-10 flex items-center justify-center w-16 lg:w-24 flex-shrink-0">
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm lg:text-base group-hover:scale-110 transition-transform">
-                    {day}
+          return (
+            <Card key={day} className="hover:shadow-lg transition-all hover:border-primary">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calendar className="h-5 w-5" />
+                      Day {day}
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      {dayName} - {dateStr}
+                    </CardDescription>
                   </div>
                 </div>
+              </CardHeader>
 
-                {/* Content card */}
-                <Card className="flex-1 hover:shadow-lg transition-all group-hover:border-primary">
-                  <CardHeader className="p-4 lg:p-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <Link href={`/trip/${tripId}/activities/${day}`} className="flex-1">
-                        <CardTitle className="text-lg lg:text-xl mb-2">Day {day}</CardTitle>
-                        <CardDescription className="text-sm lg:text-base mb-1">
-                          {dayName} - {dateStr}
-                        </CardDescription>
-                        <CardDescription className="text-xs lg:text-sm text-muted-foreground">
-                          {activitiesByDay?.[day]?.length || 0} {activitiesByDay?.[day]?.length === 1 ? 'activity' : 'activities'}
-                        </CardDescription>
-                      </Link>
+              <CardContent>
+                <Tabs defaultValue="activities" className="w-full">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="activities" className="text-xs">
+                      <Calendar className="h-3 w-3 mr-1" />
+                      Activities ({dayActivities.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="challenges" className="text-xs">
+                      <Target className="h-3 w-3 mr-1" />
+                      Challenges ({dayChallenges.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="media" className="text-xs">
+                      <Camera className="h-3 w-3 mr-1" />
+                      Media ({dayMedia.length})
+                    </TabsTrigger>
+                  </TabsList>
 
-                      {/* Attendees and Join/Leave button */}
-                      <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                        {/* Attendee avatars */}
-                        {dayAttendees.length > 0 && (
-                          <div className="flex -space-x-2">
-                            {dayAttendees.slice(0, 3).map((attendee) => {
-                              const initials = attendee.user?.full_name
-                                ?.split(' ')
-                                .map((n) => n[0])
-                                .join('')
-                                .toUpperCase() || attendee.user?.email?.[0].toUpperCase() || '?'
-
-                              return (
-                                <Avatar key={attendee.id} className="h-8 w-8 border-2 border-background">
-                                  <AvatarImage src={attendee.user?.avatar_url} />
-                                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-                                </Avatar>
-                              )
-                            })}
-                            {dayAttendees.length > 3 && (
-                              <div className="h-8 w-8 rounded-full bg-muted border-2 border-background flex items-center justify-center">
-                                <span className="text-xs font-medium">+{dayAttendees.length - 3}</span>
-                              </div>
-                            )}
-                          </div>
+                  {/* Activities Tab */}
+                  <TabsContent value="activities" className="space-y-3 mt-4">
+                    {dayActivities.length === 0 ? (
+                      <div className="text-center py-4 text-sm text-muted-foreground">
+                        No activities planned
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-2"
+                            onClick={() => setShowActivityForm(showActivityForm === day ? null : day)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add Activity
+                          </Button>
                         )}
-
-                        {/* Join/Leave button */}
-                        <Button
-                          size="sm"
-                          variant={isUserAttending ? 'outline' : 'default'}
-                          onClick={() => {
-                            if (isUserAttending) {
-                              leaveDay.mutate(day)
-                            } else {
-                              joinDay.mutate(day)
-                            }
-                          }}
-                          disabled={joinDay.isPending || leaveDay.isPending}
-                          className="h-8"
-                        >
-                          {(joinDay.isPending || leaveDay.isPending) ? (
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                          ) : isUserAttending ? (
-                            <>
-                              <UserMinus className="h-3 w-3 mr-1" />
-                              <span className="hidden sm:inline">Leave</span>
-                            </>
-                          ) : (
-                            <>
-                              <UserPlus className="h-3 w-3 mr-1" />
-                              <span className="hidden sm:inline">Join</span>
-                            </>
-                          )}
-                        </Button>
                       </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {dayActivities.map((activity) => (
+                          <ActivityCard
+                            key={activity.id}
+                            activity={activity}
+                            onDelete={(id) => deleteActivity.mutate(id)}
+                            canDelete={isAdmin || activity.created_by === userId}
+                          />
+                        ))}
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => setShowActivityForm(showActivityForm === day ? null : day)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add Activity
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Activity Form */}
+                    {showActivityForm === day && isAdmin && (
+                      <div className="mt-4 p-3 border rounded-lg">
+                        <ActivityForm
+                          day={day}
+                          onSubmit={(data) => {
+                            createActivity.mutate(data)
+                            setShowActivityForm(null)
+                          }}
+                          isSubmitting={createActivity.isPending}
+                        />
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* Challenges Tab */}
+                  <TabsContent value="challenges" className="space-y-3 mt-4">
+                    {dayChallenges.length === 0 ? (
+                      <div className="text-center py-4 text-sm text-muted-foreground">
+                        No challenges for this day
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {dayChallenges.slice(0, 3).map((challenge) => (
+                          <div key={challenge.id} className="p-3 border rounded-lg">
+                            <div className="flex items-start gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {challenge.category}
+                              </Badge>
+                              <div className="flex-1">
+                                <p className="text-sm">{challenge.text}</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {challenge.points} points
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {dayChallenges.length > 3 && (
+                          <Link href={`/trip/${tripId}/games/challenges`}>
+                            <Button variant="ghost" size="sm" className="w-full">
+                              View all challenges
+                            </Button>
+                          </Link>
+                        )}
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* Media Tab */}
+                  <TabsContent value="media" className="space-y-3 mt-4">
+                    <div className="space-y-3">
+                      <MediaUpload
+                        onUpload={async (files) => {
+                          const filesWithDay = files.map(f => ({ ...f, day }))
+                          uploadMedia.mutate(filesWithDay)
+                        }}
+                        isUploading={uploadMedia.isPending}
+                      />
+                      
+                      {dayMedia.length === 0 ? (
+                        <div className="text-center py-4 text-sm text-muted-foreground">
+                          No media uploaded for this day
+                        </div>
+                      ) : (
+                        <MediaGrid
+                          media={dayMedia}
+                          onDelete={(id) => deleteMedia.mutate(id)}
+                          canDelete={true}
+                        />
+                      )}
                     </div>
-                  </CardHeader>
-                </Card>
-              </div>
-            )
-          })}
-        </div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     </div>
   )

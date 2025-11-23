@@ -10,81 +10,131 @@ export function useMedia(tripId: string, day?: number) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  const { data: media, isLoading } = useQuery({
+  const { data: media, isLoading, error } = useQuery({
     queryKey: ['media', tripId, day],
     queryFn: async () => {
-      let query = supabase
-        .from('media')
-        .select(`
-          *,
-          user:profiles(*),
-          activity:activities(*)
-        `)
-        .eq('trip_id', tripId)
-        .order('created_at', { ascending: false })
+      try {
+        // Get current user
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        if (userError || !user) {
+          throw new Error('User not authenticated')
+        }
+        
+        // First get media without join
+        let mediaQuery = supabase
+          .from('media')
+          .select('*')
+          .eq('trip_id', tripId)
+          .order('created_at', { ascending: false })
 
-      if (day !== undefined) {
-        query = query.eq('day', day)
+        if (day !== undefined) {
+          mediaQuery = mediaQuery.eq('day', day)
+        }
+
+        const { data: mediaData, error: mediaError } = await mediaQuery
+
+        if (mediaError) {
+          throw mediaError
+        }
+        
+        // If we have media, get the user profiles separately
+        if (mediaData && mediaData.length > 0) {
+          const userIds = [...new Set(mediaData.map(m => m.user_id))]
+          
+          const { data: profiles, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .in('id', userIds)
+          
+          if (profileError) {
+            console.error('Error fetching profiles:', profileError)
+            // Continue without profiles if there's an error
+          }
+          
+          // Combine media with profiles
+          const mediaWithProfiles = mediaData.map(media => ({
+            ...media,
+            user: profiles?.find(p => p.id === media.user_id) || {
+              id: media.user_id,
+              full_name: 'Unknown User',
+              avatar_url: null
+            }
+          }))
+          
+          return mediaWithProfiles
+        }
+        
+        return mediaData || []
+      } catch (err) {
+        console.error('Media fetch error:', err)
+        throw err
       }
-
-      const { data, error } = await query
-
-      if (error) throw error
-      return data as Media[]
     },
   })
 
   const uploadMedia = useMutation({
-    mutationFn: async ({
-      file,
-      day,
-      activityId,
-    }: {
-      file: File
-      day?: number
-      activityId?: string
-    }) => {
+    mutationFn: async (files: { file: File; day?: number; activityId?: string }[]) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Upload file to storage
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`
+      const results = []
 
-      const { error: uploadError } = await supabase.storage
-        .from('trip-media')
-        .upload(fileName, file)
+      for (const { file, day, activityId } of files) {
+        try {
+          // Upload file to storage
+          const fileExt = file.name.split('.').pop()
+          const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`
 
-      if (uploadError) throw uploadError
+          const { error: uploadError } = await supabase.storage
+            .from('trip-media')
+            .upload(fileName, file)
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('trip-media')
-        .getPublicUrl(fileName)
+          if (uploadError) throw uploadError
 
-      // Create media record
-      const { data, error } = await supabase
-        .from('media')
-        .insert({
-          trip_id: tripId,
-          user_id: user.id,
-          activity_id: activityId,
-          day,
-          url: publicUrl,
-          type: file.type.startsWith('video/') ? 'video' : 'image',
-        })
-        .select()
-        .single()
+          // Get public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('trip-media')
+            .getPublicUrl(fileName)
 
-      if (error) throw error
-      return data
+          // Create media record
+          const { data, error } = await supabase
+            .from('media')
+            .insert({
+              trip_id: tripId,
+              user_id: user.id,
+              activity_id: activityId,
+              day,
+              url: publicUrl,
+              type: file.type.startsWith('video/') ? 'video' : 'image',
+            })
+            .select()
+            .single()
+
+          if (error) throw error
+          results.push(data)
+        } catch (error) {
+          console.error('Error uploading file:', file.name, error)
+          throw error
+        }
+      }
+
+      return results
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['media', tripId] })
-      toast({ title: 'Media uploaded successfully!' })
+      const count = Array.isArray(data) ? data.length : 1
+      toast({ 
+        title: `${count} file${count > 1 ? 's' : ''} uploaded successfully!`,
+        description: count > 1 ? 'All files have been added to your media vault.' : 'File has been added to your media vault.'
+      })
     },
-    onError: () => {
-      toast({ title: 'Error', description: 'Failed to upload media', variant: 'destructive' })
+    onError: (error: any) => {
+      console.error('Upload failed:', error)
+      toast({ 
+        title: 'Upload failed', 
+        description: error?.message || 'Failed to upload media files', 
+        variant: 'destructive' 
+      })
     },
   })
 
@@ -114,6 +164,7 @@ export function useMedia(tripId: string, day?: number) {
   return {
     media,
     isLoading,
+    error,
     uploadMedia,
     deleteMedia,
   }

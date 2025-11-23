@@ -4,6 +4,7 @@ import './globals.css'
 import { AuthProvider } from '@/components/auth/AuthProvider'
 import { QueryProvider } from '@/components/providers/QueryProvider'
 import { LoadingProvider } from '@/components/providers/LoadingProvider'
+import { TopLoadingBar } from '@/components/ui/top-loading-bar'
 import { Toaster } from '@/components/ui/toaster'
 import { Suspense } from 'react'
 
@@ -32,6 +33,7 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
       </head>
       <body className={inter.className}>
+        <TopLoadingBar />
         <QueryProvider>
           <AuthProvider>
             <Suspense fallback={<div />}>

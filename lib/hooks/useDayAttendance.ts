@@ -62,12 +62,15 @@ export function useDayAttendance(tripId: string, day?: number) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
+      // Use upsert to avoid duplicate key errors
       const { data, error } = await supabase
         .from('day_attendance')
-        .insert({
+        .upsert({
           trip_id: tripId,
           user_id: user.id,
           day: dayNumber,
+        }, {
+          onConflict: 'trip_id,user_id,day'
         })
         .select()
         .single()
@@ -75,17 +78,31 @@ export function useDayAttendance(tripId: string, day?: number) {
       if (error) throw error
       return data
     },
-    onSuccess: () => {
+    onSuccess: (data, dayNumber) => {
+      // Invalidate all related queries
       queryClient.invalidateQueries({ queryKey: ['day-attendance', tripId] })
+      queryClient.invalidateQueries({ queryKey: ['user-day-attendance', tripId, dayNumber] })
       queryClient.invalidateQueries({ queryKey: ['user-day-attendance', tripId] })
+      
       toast({ title: 'Joined day successfully!' })
     },
     onError: (error: any) => {
-      toast({
-        title: 'Error',
-        description: error?.message || 'Failed to join day',
-        variant: 'destructive'
-      })
+      console.error('Error joining day:', error)
+      
+      // Handle specific error cases
+      if (error?.message?.includes('duplicate key')) {
+        toast({
+          title: 'Already Joined',
+          description: 'You are already participating in this day',
+          variant: 'default'
+        })
+      } else {
+        toast({
+          title: 'Error',
+          description: error?.message || 'Failed to join day',
+          variant: 'destructive'
+        })
+      }
     },
   })
 
@@ -104,10 +121,21 @@ export function useDayAttendance(tripId: string, day?: number) {
 
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (data, dayNumber) => {
+      // Invalidate all related queries
       queryClient.invalidateQueries({ queryKey: ['day-attendance', tripId] })
+      queryClient.invalidateQueries({ queryKey: ['user-day-attendance', tripId, dayNumber] })
       queryClient.invalidateQueries({ queryKey: ['user-day-attendance', tripId] })
+      
       toast({ title: 'Left day' })
+    },
+    onError: (error: any) => {
+      console.error('Error leaving day:', error)
+      toast({
+        title: 'Error',
+        description: error?.message || 'Failed to leave day',
+        variant: 'destructive'
+      })
     },
   })
 

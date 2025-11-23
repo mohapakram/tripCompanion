@@ -23,12 +23,12 @@ export function LoadingSpinner({ size = 'md', className }: LoadingSpinnerProps) 
   )
 }
 
-export function FullPageLoader() {
+export function FullPageLoader({ message = 'Loading...' }: { message?: string }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-      <div className="flex flex-col items-center gap-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-4 p-8 rounded-lg bg-card border shadow-lg">
         <LoadingSpinner size="lg" />
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <p className="text-sm text-muted-foreground animate-pulse">{message}</p>
       </div>
     </div>
   )

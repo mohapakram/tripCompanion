@@ -1,7 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+'use client'
+
+import { use, useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDate, getTripDays } from '@/lib/utils'
-import Link from 'next/link'
+import { useNavigationLoading } from '@/hooks/useNavigationLoading'
 import { Calendar, Camera, Gamepad2, Users, Upload, Trophy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -33,40 +36,124 @@ function getCurrentDay(startDate: string, endDate: string) {
   return { status: 'ongoing', day: dayNumber }
 }
 
-export default async function TripDashboard({
+export default function TripDashboard({
   params,
 }: {
   params: Promise<{ tripId: string }>
 }) {
-  const { tripId } = await params
-  const supabase = await createClient()
+  const { tripId } = use(params)
+  const { push: navigateWithLoading } = useNavigationLoading()
+  const [isLoading, setIsLoading] = useState(true)
+  const [dashboardData, setDashboardData] = useState<any>(null)
+  
+  const supabase = createClient()
 
-  // First, fetch the trip to get start/end dates
-  const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).single()
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      setIsLoading(true)
+      
+      try {
+        // First, fetch the trip to get start/end dates
+        const { data: trip, error: tripError } = await supabase
+          .from('trips')
+          .select('*')
+          .eq('id', tripId)
+          .single()
 
-  // Calculate current day info
-  const currentDayInfo = trip ? getCurrentDay(trip.start_date, trip.end_date) : { status: 'upcoming', daysUntil: 0 }
-  const currentDay = currentDayInfo.status === 'ongoing' ? currentDayInfo.day : 1
+        if (tripError) {
+          console.error('Error fetching trip:', tripError)
+          return
+        }
 
-  // Then fetch the rest of the data in parallel
-  const [
-    { data: members },
-    { data: activities },
-    { data: todayActivities },
-    { data: media },
-    { data: { user } },
-    { data: challenges }
-  ] = await Promise.all([
-    supabase.from('trip_members').select('*, profiles(*)').eq('trip_id', tripId),
-    supabase.from('activities').select('*').eq('trip_id', tripId).limit(5),
-    supabase.from('activities').select('*').eq('trip_id', tripId).eq('day', currentDay),
-    supabase.from('media').select('*').eq('trip_id', tripId).limit(6),
-    supabase.auth.getUser(),
-    supabase.from('challenges').select('*').eq('trip_id', tripId).limit(3),
-  ])
+        // Calculate current day info
+        const currentDayInfo = trip ? getCurrentDay(trip.start_date, trip.end_date) : { status: 'upcoming', daysUntil: 0 }
+        const currentDay = currentDayInfo.status === 'ongoing' ? currentDayInfo.day : 1
 
-  const totalDays = trip ? getTripDays(trip.start_date, trip.end_date) : 0
-  const userName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'there'
+        // Then fetch the rest of the data in parallel
+        const [
+          { data: members },
+          { data: activities },
+          { data: todayActivities },
+          { data: media },
+          { data: { user } },
+          { data: challenges }
+        ] = await Promise.all([
+          supabase.from('trip_members').select('*, profiles(*)').eq('trip_id', tripId),
+          supabase.from('activities').select('*').eq('trip_id', tripId).limit(5),
+          supabase.from('activities').select('*').eq('trip_id', tripId).eq('day', currentDay),
+          supabase.from('media').select('*').eq('trip_id', tripId).limit(6),
+          supabase.auth.getUser(),
+          supabase.from('challenges').select('*').eq('trip_id', tripId).limit(3),
+        ])
+
+        const totalDays = trip ? getTripDays(trip.start_date, trip.end_date) : 0
+        const userName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'there'
+
+        setDashboardData({
+          trip,
+          currentDayInfo,
+          currentDay,
+          members,
+          activities,
+          todayActivities,
+          media,
+          user,
+          challenges,
+          totalDays,
+          userName
+        })
+      } catch (error) {
+        console.error('Error loading dashboard data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadDashboardData()
+  }, [tripId, supabase])
+
+  const handleNavigation = (href: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    navigateWithLoading(href)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-muted rounded w-1/3 mb-4"></div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-24 bg-muted rounded"></div>
+            ))}
+          </div>
+          <div className="space-y-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-32 bg-muted rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!dashboardData) {
+    return <div className="p-6">Error loading dashboard data</div>
+  }
+
+  const { 
+    trip, 
+    currentDayInfo, 
+    currentDay, 
+    members, 
+    activities, 
+    todayActivities, 
+    media, 
+    user, 
+    challenges, 
+    totalDays, 
+    userName 
+  } = dashboardData
 
   return (
     <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
@@ -137,33 +224,41 @@ export default async function TripDashboard({
       {/* Quick Actions for Today */}
       {currentDayInfo.status === 'ongoing' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-          <Link href={`/trip/${tripId}/activities/${currentDayInfo.day}`}>
-            <Button variant="outline" className="w-full h-20 flex flex-col gap-2">
-              <Calendar className="h-5 w-5 text-primary" />
-              <span className="text-xs font-medium">Today's Activities</span>
-            </Button>
-          </Link>
+          <Button 
+            variant="outline" 
+            className="w-full h-20 flex flex-col gap-2"
+            onClick={(e) => handleNavigation(`/trip/${tripId}/activities/${currentDayInfo.day}`, e)}
+          >
+            <Calendar className="h-5 w-5 text-primary" />
+            <span className="text-xs font-medium">Today's Activities</span>
+          </Button>
 
-          <Link href={`/trip/${tripId}/games/challenges`}>
-            <Button variant="outline" className="w-full h-20 flex flex-col gap-2">
-              <Gamepad2 className="h-5 w-5 text-primary" />
-              <span className="text-xs font-medium">Today's Challenges</span>
-            </Button>
-          </Link>
+          <Button 
+            variant="outline" 
+            className="w-full h-20 flex flex-col gap-2"
+            onClick={(e) => handleNavigation(`/trip/${tripId}/games/challenges`, e)}
+          >
+            <Gamepad2 className="h-5 w-5 text-primary" />
+            <span className="text-xs font-medium">Today's Challenges</span>
+          </Button>
 
-          <Link href={`/trip/${tripId}/media`}>
-            <Button variant="outline" className="w-full h-20 flex flex-col gap-2">
-              <Upload className="h-5 w-5 text-primary" />
-              <span className="text-xs font-medium">Upload Media</span>
-            </Button>
-          </Link>
+          <Button 
+            variant="outline" 
+            className="w-full h-20 flex flex-col gap-2"
+            onClick={(e) => handleNavigation(`/trip/${tripId}/media`, e)}
+          >
+            <Upload className="h-5 w-5 text-primary" />
+            <span className="text-xs font-medium">Upload Media</span>
+          </Button>
 
-          <Link href={`/trip/${tripId}/games/leaderboard`}>
-            <Button variant="outline" className="w-full h-20 flex flex-col gap-2">
-              <Trophy className="h-5 w-5 text-primary" />
-              <span className="text-xs font-medium">Leaderboard</span>
-            </Button>
-          </Link>
+          <Button 
+            variant="outline" 
+            className="w-full h-20 flex flex-col gap-2"
+            onClick={(e) => handleNavigation(`/trip/${tripId}/games/leaderboard`, e)}
+          >
+            <Trophy className="h-5 w-5 text-primary" />
+            <span className="text-xs font-medium">Leaderboard</span>
+          </Button>
         </div>
       )}
 
@@ -175,19 +270,23 @@ export default async function TripDashboard({
             <CardDescription className="text-xs lg:text-sm">Day {currentDayInfo.day} activities</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {todayActivities.slice(0, 3).map((activity) => (
-              <div key={activity.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent">
-                <div className="text-xs font-medium text-muted-foreground w-16">
+            {todayActivities.slice(0, 3).map((activity: any) => (
+              <div key={activity.id} className="flex items-center gap-2 lg:gap-3 p-2 lg:p-3 rounded border">
+                <div className="text-xs lg:text-sm text-muted-foreground">
                   {activity.time}
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">{activity.title}</p>
+                  <p className="text-xs lg:text-sm font-medium">{activity.title}</p>
                 </div>
               </div>
             ))}
-            <Link href={`/trip/${tripId}/activities/${currentDayInfo.day}`}>
-              <Button variant="link" className="w-full text-xs">View all activities →</Button>
-            </Link>
+            <Button 
+              variant="link" 
+              className="w-full text-xs"
+              onClick={(e) => handleNavigation(`/trip/${tripId}/activities/${currentDayInfo.day}`, e)}
+            >
+              View all activities →
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -201,7 +300,7 @@ export default async function TripDashboard({
           <CardContent>
             {media && media.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">
-                {media.slice(0, 6).map((item) => (
+                {media.slice(0, 6).map((item: any) => (
                   <div key={item.id} className="aspect-square bg-muted rounded-md overflow-hidden">
                     <img
                       src={item.url}
@@ -223,30 +322,38 @@ export default async function TripDashboard({
             <CardDescription className="text-xs lg:text-sm">Navigate to features</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-2">
-            <Link href={`/trip/${tripId}/activities`}>
-              <Button variant="ghost" className="w-full justify-start text-xs">
-                <Calendar className="h-4 w-4 mr-2" />
-                All Activities
-              </Button>
-            </Link>
-            <Link href={`/trip/${tripId}/games`}>
-              <Button variant="ghost" className="w-full justify-start text-xs">
-                <Gamepad2 className="h-4 w-4 mr-2" />
-                Games
-              </Button>
-            </Link>
-            <Link href={`/trip/${tripId}/media`}>
-              <Button variant="ghost" className="w-full justify-start text-xs">
-                <Camera className="h-4 w-4 mr-2" />
-                Media
-              </Button>
-            </Link>
-            <Link href={`/trip/${tripId}/settings`}>
-              <Button variant="ghost" className="w-full justify-start text-xs">
-                <Users className="h-4 w-4 mr-2" />
-                Settings
-              </Button>
-            </Link>
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-xs"
+              onClick={(e) => handleNavigation(`/trip/${tripId}/activities`, e)}
+            >
+              <Calendar className="h-4 w-4 mr-2" />
+              All Activities
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-xs"
+              onClick={(e) => handleNavigation(`/trip/${tripId}/games`, e)}
+            >
+              <Gamepad2 className="h-4 w-4 mr-2" />
+              Games
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-xs"
+              onClick={(e) => handleNavigation(`/trip/${tripId}/media`, e)}
+            >
+              <Camera className="h-4 w-4 mr-2" />
+              Media
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-xs"
+              onClick={(e) => handleNavigation(`/trip/${tripId}/settings`, e)}
+            >
+              <Users className="h-4 w-4 mr-2" />
+              Settings
+            </Button>
           </CardContent>
         </Card>
       </div>

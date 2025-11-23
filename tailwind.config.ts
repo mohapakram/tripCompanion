@@ -58,6 +58,10 @@ const config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      fontFamily: {
+        'sans': ['var(--font-inter)', 'ui-sans-serif', 'system-ui'],
+        'arabic': ['var(--font-cairo)', 'ui-sans-serif', 'system-ui'],
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

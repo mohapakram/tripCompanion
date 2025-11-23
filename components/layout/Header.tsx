@@ -1,12 +1,12 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { useHasMounted } from '@/hooks/use-has-mounted'
+import { useNavigationLoading } from '@/hooks/useNavigationLoading'
 import { LogOut, ArrowLeft, List } from 'lucide-react'
 
 interface HeaderProps {
@@ -18,13 +18,17 @@ interface HeaderProps {
 export function Header({ tripName, showBack, onBack }: HeaderProps) {
   const { user, loading } = useAuth()
   const hasMounted = useHasMounted()
-  const router = useRouter()
+  const { push: navigateWithLoading } = useNavigationLoading()
   const supabase = createClient()
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+    navigateWithLoading('/login')
+  }
+
+  const handleHomeNavigation = (e: React.MouseEvent) => {
+    e.preventDefault()
+    navigateWithLoading('/')
   }
 
   // Ensure consistent fallback during hydration
@@ -45,7 +49,7 @@ export function Header({ tripName, showBack, onBack }: HeaderProps) {
           )}
           {tripName && (
             <>
-              <Link href="/">
+              <Link href="/" onClick={handleHomeNavigation}>
                 <Button variant="ghost" size="icon" title="All Trips">
                   <List className="h-5 w-5" />
                 </Button>

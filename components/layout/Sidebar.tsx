@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useNavigationLoading } from '@/hooks/useNavigationLoading'
 import { cn } from '@/lib/utils'
 import { Calendar, Camera, Gamepad2, Home, Settings, Music } from 'lucide-react'
 
@@ -20,6 +21,12 @@ const navItems = [
 
 export function Sidebar({ tripId }: SidebarProps) {
   const pathname = usePathname()
+  const { push: navigateWithLoading } = useNavigationLoading()
+
+  const handleNavigation = (href: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    navigateWithLoading(href)
+  }
 
   return (
     <>
@@ -38,6 +45,7 @@ export function Sidebar({ tripId }: SidebarProps) {
               <Link
                 key={item.href}
                 href={href}
+                onClick={(e) => handleNavigation(href, e)}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                   isActive
@@ -65,6 +73,7 @@ export function Sidebar({ tripId }: SidebarProps) {
               <Link
                 key={item.href}
                 href={href}
+                onClick={(e) => handleNavigation(href, e)}
                 className={cn(
                   'flex flex-col items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors min-w-[60px]',
                   isActive
